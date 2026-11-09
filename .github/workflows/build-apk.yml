@@ -1,0 +1,104 @@
+name: Build Android APK
+
+on:
+  push:
+    branches:
+      - main
+      - master
+    paths-ignore:
+      - 'README.md'
+      - '.gitignore'
+  workflow_dispatch:
+    inputs:
+      reason:
+        description: 'Manual build trigger'
+        required: false
+        default: 'Manual APK rebuild'
+
+permissions:
+  contents: write
+
+jobs:
+  build-apk:
+    name: Build & Package Android APK
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Setup Java 17 (Temurin)
+        uses: actions/setup-java@v4
+        with:
+          distribution: 'temurin'
+          java-version: '17'
+
+      - name: Setup Android SDK & Accept Licenses
+        uses: android-actions/setup-android@v3
+
+      - name: Setup Gradle
+        uses: gradle/actions/setup-gradle@v4
+
+      - name: Setup Node.js 22
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: 'npm'
+
+      - name: Install Dependencies
+        run: |
+          npm install --legacy-peer-deps
+
+      - name: Build Web Application
+        run: |
+          npm run build
+
+      - name: Sync Web Assets to Android Project
+        run: |
+          npx cap sync android
+
+      - name: Make Gradle Wrapper Executable
+        run: |
+          chmod +x android/gradlew
+
+      - name: Build Android APK via Gradle
+        run: |
+          cd android
+          ./gradlew assembleDebug --no-daemon --stacktrace
+
+      - name: Prepare APK File for Download
+        run: |
+          mkdir -p release-apk
+          APK_FOUND=$(find android/app/build/outputs/apk/ -name "*.apk" | head -n 1)
+          if [ -n "$APK_FOUND" ] && [ -f "$APK_FOUND" ]; then
+            echo "Found APK at: $APK_FOUND"
+            cp "$APK_FOUND" release-apk/MetaTrader-5-Exness.apk
+            ls -lh release-apk/MetaTrader-5-Exness.apk
+          else
+            echo "ERROR: Could not find APK in android/app/build/outputs/apk/"
+            find android/app/build/ -type f || true
+            exit 1
+          fi
+
+      - name: Upload APK to GitHub Artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: MetaTrader-5-Exness-APK
+          path: release-apk/MetaTrader-5-Exness.apk
+          retention-days: 30
+
+      - name: Create GitHub Release with APK
+        uses: softprops/action-gh-release@v2
+        if: github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master'
+        with:
+          tag_name: v1.0.${{ github.run_number }}
+          name: MetaTrader 5 APK v1.0.${{ github.run_number }}
+          body: |
+            ### 📱 تطبيق MetaTrader 5 (MT5) لنظام أندرويد
+            - حساب **إسلام** (`256476260 — Exness-MT5Real35`) برصيد `1026.87 USD`.
+            - أسعار حية ومباشرة لـ BTCUSD عبر بث باينانس المباشر (Binance Live Stream).
+            - شارت تجريبي تفاعلي وأقسام التداول والأسعار والسجل.
+            
+            **قم بتحميل ملف `MetaTrader-5-Exness.apk` المرفق أدناه وتثبيته على هاتفك.**
+          files: release-apk/MetaTrader-5-Exness.apk
+        continue-on-error: true
