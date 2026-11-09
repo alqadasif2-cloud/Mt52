@@ -33,10 +33,3 @@ jobs:
 
       - name: Build Production Assets
         run: npm run build
-
-      - name: Upload Build Artifacts
-        uses: actions/upload-artifact@v4
-        with:
-          name: mt5-build-dist
-          path: dist/
-          retention-days: 14
